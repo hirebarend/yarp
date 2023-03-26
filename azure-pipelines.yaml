@@ -1,0 +1,19 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: Npm@1
+  displayName: 'npm install'
+  inputs:
+    workingDir: node-js
+    verbose: false
+- task: Npm@1
+  displayName: 'npm run build'
+  inputs:
+    workingDir: node-js
+    command: custom
+    verbose: false
+    customCommand: 'run build'
