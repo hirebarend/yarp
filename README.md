@@ -1,6 +1,6 @@
-import { ReverseProxy } from './reverse-proxy';
-import { Router } from './router';
+# YARP (Yet Another Reverse Proxy)
 
+```typescript
 (async () => {
   const reverseProxy: ReverseProxy = new ReverseProxy(
     { http: 8080, https: 8081 },
@@ -23,3 +23,4 @@ import { Router } from './router';
 
   reverseProxy.start();
 })();
+```
