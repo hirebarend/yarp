@@ -1,83 +1,101 @@
-import { LoadBalancerPolicy } from './interfaces';
-import { RoundRobinLoadBalancerPolicy } from './round-robin-load-balancer-policy';
-
-type RouterConfig = {
-  clusters: {
-    [key: string]: {
-      destinations: Array<string>;
-    };
-  };
-  routes: Array<{
-    clusterId: string;
-    hosts: Array<string>;
-    methods: Array<string>;
-    path: string;
-  }>;
-};
+import { Configuration } from './configuration';
+import { RouterResult } from './router-result';
 
 export class Router {
-  protected readonly loadBalancerPolicy: {
-    [key: string]: LoadBalancerPolicy<string>;
-  } = {};
+  constructor(protected configuration: Configuration) {}
 
-  constructor(protected config: RouterConfig) {
-    this.setConfig(null);
-  }
-
-  public setConfig(config: RouterConfig | null): Router {
-    if (config) {
-      this.config = config;
-    }
-
-    for (const cluster in this.config.clusters) {
-      this.loadBalancerPolicy[cluster] = new RoundRobinLoadBalancerPolicy(
-        new Set(this.config.clusters[cluster].destinations)
-      );
-    }
+  public setConfig(configuration: Configuration): Router {
+    this.configuration = configuration;
 
     return this;
   }
 
-  public get(
-    host: string,
-    method: string,
-    path: string
-  ): {
+  public get(request: {
+    headers: { [key: string]: string };
     host: string;
-    port: number | null;
-    protocol: string;
-  } {
-    for (const route of this.config.routes) {
-      if (route.hosts.length && route.hosts.includes(host)) {
+    method: string;
+    path: string;
+    query: { [key: string]: string };
+    scheme: string;
+  }): RouterResult {
+    for (const route of this.configuration.routes) {
+      if (!route.upstream.methods.includes(request.method)) {
         continue;
       }
 
-      if (route.methods.length && route.methods.includes(method)) {
+      const regExpExecArray: RegExpExecArray | null = new RegExp(
+        route.upstream.path,
+      ).exec(request.path);
+
+      if (!regExpExecArray) {
         continue;
       }
 
-      const regExp = new RegExp(route.path);
-
-      if (!regExp.test(path)) {
-        continue;
-      }
-
-      const destination: string | null =
-        this.loadBalancerPolicy[route.clusterId].get();
-
-      if (!destination) {
-        throw new Error();
-      }
-
-      const url: URL = new URL(destination);
+      const params = {
+        ...request.query,
+        ...regExpExecArray.groups,
+        path: request.path,
+      };
 
       return {
-        host: url.host,
-        port: url.port ? parseInt(url.port) : null,
-        protocol: url.protocol,
+        headers: Object.keys(route.downstream.headers).reduce(
+          (dict, key) => {
+            dict[key] = this.buildTemplate(
+              route.downstream.headers[key],
+              params,
+            );
+            return {};
+          },
+          {} as { [key: string]: string },
+        ),
+        host: route.downstream.hostAndPorts[0].host, // TODO: load balancer
+        method: request.method,
+        path: this.buildTemplate(route.downstream.path, params),
+        query: Object.keys(request.query).reduce(
+          (dict, x) => {
+            dict[x] = this.buildTemplate(dict[x], params);
+
+            return dict;
+          },
+          {} as { [key: string]: string },
+        ),
+        scheme: 'https',
       };
     }
 
     throw new Error();
+  }
+
+  protected buildTemplate(
+    template: string,
+    params: { [key: string]: string },
+  ): string {
+    let result: string = '';
+
+    let key: string | null = null;
+
+    for (let i = 0; i < template.length; i++) {
+      if (key === null && template[i] === '{') {
+        key = '';
+
+        continue;
+      }
+
+      if (key !== null && template[i] === '}') {
+        result += params[key];
+
+        continue;
+      }
+
+      if (key !== null) {
+        key += template[i];
+
+        continue;
+      }
+
+      result += template[i];
+    }
+
+    return result;
   }
 }

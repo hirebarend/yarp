@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
+import * as moment from 'moment';
 import { Router } from './router';
 
 export class ReverseProxy {
@@ -11,73 +12,98 @@ export class ReverseProxy {
 
   constructor(
     protected ports: { http: number; https: number },
-    protected router: Router
+    protected router: Router,
   ) {
     this.initialize();
   }
 
   protected httpRequestListener(
     httpIncomingMessageSource: http.IncomingMessage,
-    httpServerResponse: http.ServerResponse
+    httpServerResponse: http.ServerResponse,
   ) {
-    const route = this.router.get(
-      httpIncomingMessageSource.headers.host || '',
-      httpIncomingMessageSource.method || '',
-      httpIncomingMessageSource.url || ''
-    );
+    try {
+      const timestamp1 = new Date().getTime();
 
-    if (route.protocol === 'http:') {
-      const request = http.request(
-        {
-          agent: this.httpAgent,
-          headers: {
-            ...httpIncomingMessageSource.headers,
-            host: route.host, // TODO
+      const routerResult = this.router.get({
+        headers: {},
+        host: httpIncomingMessageSource.headers.host || '',
+        method: httpIncomingMessageSource.method || '',
+        path: httpIncomingMessageSource.url || '',
+        query: {},
+        scheme: 'https',
+      });
+
+      if (routerResult.scheme === 'http') {
+        throw new Error('not supported yet');
+      }
+
+      if (routerResult.scheme === 'https') {
+        const request = https.request(
+          {
+            agent: this.httpsAgent,
+            headers: {
+              ...httpIncomingMessageSource.headers,
+              ...routerResult.headers,
+              host: routerResult.host, // TODO
+            },
+            host: routerResult.host,
+            method: httpIncomingMessageSource.method,
+            path: httpIncomingMessageSource.url,
+            searchParams: new URLSearchParams(routerResult.query),
           },
-          host: route.host,
-          method: httpIncomingMessageSource.method,
-          path: httpIncomingMessageSource.url,
-        },
-        (httpIncomingMessageDestination) => {
-          for (const headerName in httpIncomingMessageDestination.headers) {
-            httpServerResponse.setHeader(
-              headerName,
-              httpIncomingMessageDestination.headers[headerName] || ''
-            );
-          }
+          (httpIncomingMessageDestination) => {
+            const timestamp2 = new Date().getTime();
 
-          httpIncomingMessageDestination.pipe(httpServerResponse);
-        }
-      );
+            const message = `${
+              httpIncomingMessageSource.socket.remoteAddress
+            } - ${moment().format('YYYY-MM-DD HH:mm:ss')} "${
+              httpIncomingMessageSource.method
+            } ${httpIncomingMessageSource.url}" ${
+              httpIncomingMessageDestination.statusCode
+            } ${timestamp2 - timestamp1}`;
 
-      httpIncomingMessageSource.pipe(request);
-    }
+            console.log(message); // TODO
 
-    if (route.protocol === 'https:') {
-      const request = https.request(
-        {
-          agent: this.httpsAgent,
-          headers: {
-            ...httpIncomingMessageSource.headers,
-            host: route.host, // TODO
+            if (httpIncomingMessageDestination.statusCode) {
+              httpServerResponse.writeHead(
+                httpIncomingMessageDestination.statusCode,
+                Object.keys(httpIncomingMessageDestination.headers).reduce(
+                  (dict, key) => {
+                    dict[key] = httpIncomingMessageDestination.headers[key];
+
+                    return dict;
+                  },
+                  {} as { [key: string]: string | string[] | undefined },
+                ),
+              );
+            }
+
+            httpIncomingMessageDestination.pipe(httpServerResponse);
           },
-          host: route.host,
-          method: httpIncomingMessageSource.method,
-          path: httpIncomingMessageSource.url,
-        },
-        (httpIncomingMessageDestination) => {
-          for (const headerName in httpIncomingMessageDestination.headers) {
-            httpServerResponse.setHeader(
-              headerName,
-              httpIncomingMessageDestination.headers[headerName] || ''
-            );
-          }
+        );
 
-          httpIncomingMessageDestination.pipe(httpServerResponse);
-        }
+        request.on('error', (error) => {
+          httpServerResponse.writeHead(500, 'Internal Server Error', {
+            'Content-Type': 'application/json',
+          });
+
+          httpServerResponse.end(
+            JSON.stringify({ message: error.message }),
+            'utf-8',
+          );
+        });
+
+        httpIncomingMessageSource.pipe(request);
+      }
+    } catch (error: any) {
+      httpServerResponse.writeHead(500, 'Internal Server Error', {
+        'Content-Type': 'application/json',
+      });
+
+      httpServerResponse.end(
+        JSON.stringify({ message: error.message }),
+        'utf-8',
       );
-
-      httpIncomingMessageSource.pipe(request);
     }
   }
 
@@ -85,9 +111,9 @@ export class ReverseProxy {
     this.httpServer = http.createServer(
       (
         httpIncomingMessageSource: http.IncomingMessage,
-        httpServerResponse: http.ServerResponse
+        httpServerResponse: http.ServerResponse,
       ) =>
-        this.httpRequestListener(httpIncomingMessageSource, httpServerResponse)
+        this.httpRequestListener(httpIncomingMessageSource, httpServerResponse),
     );
 
     return this;

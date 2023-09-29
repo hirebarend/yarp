@@ -1,25 +1,39 @@
-import { ReverseProxy } from './reverse-proxy';
-import { Router } from './router';
+function buildPath(template: string, params: { [key: string]: string }) {
+  let result: string = '';
 
-(async () => {
-  const reverseProxy: ReverseProxy = new ReverseProxy(
-    { http: 8080, https: 8081 },
-    new Router({
-      clusters: {
-        one: {
-          destinations: ['https://hirebarend.com'],
-        },
-      },
-      routes: [
-        {
-          clusterId: 'one',
-          hosts: [],
-          methods: [],
-          path: '^.*$',
-        },
-      ],
-    })
-  );
+  let key: string | null = null;
 
-  reverseProxy.start();
-})();
+  for (let i = 0; i < template.length; i++) {
+    if (key === null && template[i] === '{') {
+      key = '';
+
+      continue;
+    }
+
+    if (key !== null && template[i] === '}') {
+      result += params[key];
+
+      continue;
+    }
+
+    if (key !== null) {
+      key += template[i];
+
+      continue;
+    }
+
+    result += template[i];
+  }
+
+  return result;
+}
+
+test('/orgs/{org}/repos', () => {
+  const result = buildPath('/orgs/{org}/repos', {
+    org: 'microsoft',
+  });
+
+  console.log(result);
+
+  expect(result).toBeTruthy();
+});
