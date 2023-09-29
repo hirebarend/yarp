@@ -10,6 +10,7 @@ import { Router } from './router';
           downstream: {
             headers: {
               hello: 'world',
+              foo: 'bar',
             },
             hostAndPorts: [
               {
