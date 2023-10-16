@@ -19,7 +19,7 @@
   "devDependencies": {
     "@types/assert": "^1.5.7",
     "@types/jest": "^29.5.5",
-    "@types/node": "^20.7.1",
+    "@types/node": "^20.8.6",
     "assert": "^2.1.0",
     "jest": "^29.7.0",
     "prettier": "^3.0.3",
@@ -30,6 +30,6 @@
   "dependencies": {
     "axios": "^1.5.1",
     "moment": "^2.29.4",
-    "winston": "^3.10.0"
+    "winston": "^3.11.0"
   }
 }
